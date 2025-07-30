@@ -2,6 +2,7 @@ import { ChatInputCommandInteraction } from 'discord.js';
 import { VoiceRecordingState } from '../types/recording';
 import { stopRecordingSession } from '../utils/recording';
 import { mixSessionFolder } from '../utils/audio-mixer';
+import { transcribeSessionFolder } from '../utils/transcription';
 import * as fs from 'fs';
 
 export async function handleStopCommand(
@@ -60,11 +61,22 @@ export async function handleStopCommand(
       console.log(`📁 Individual clips are still available in: ${session.folderPath}`);
     }
     
+    // Attempt to transcribe audio clips automatically
+    let transcriptPath: string | null = null;
+    try {
+      await interaction.editReply('🔄 Creating transcript from audio clips...');
+      transcriptPath = await transcribeSessionFolder(session.folderPath);
+      console.log(`📝 Transcript created: ${transcriptPath}`);
+    } catch (transcriptionError) {
+      console.warn(`⚠️ Transcription failed: ${transcriptionError instanceof Error ? transcriptionError.message : 'Unknown error'}`);
+      console.log(`📁 Audio files are still available in: ${session.folderPath}`);
+    }
+    
     // Success response with session summary
     const startTimestamp = Math.floor(session.startTime.getTime() / 1000);
     const endTimestamp = Math.floor(new Date().getTime() / 1000);
     
-    // Build success message with mixing status
+    // Build success message with mixing and transcription status
     let message = `✅ **Recording stopped!**\n\n` +
       `📊 **Session Summary:**\n` +
       `⏰ **Duration:** ${durationMinutes}m ${durationSeconds}s\n` +
@@ -74,13 +86,21 @@ export async function handleStopCommand(
       `🟢 Started: <t:${startTimestamp}:T>\n` +
       `🔴 Ended: <t:${endTimestamp}:T>\n\n`;
     
+    // Add mixing status
     if (mixedFilePath) {
-      message += `🎵 **Mixed timeline created:** \`mixed_timeline.ogg\`\n` +
-        `🔍 Check the \`recordings/${folderName}\` folder for both individual clips and the mixed timeline.`;
+      message += `🎵 **Mixed timeline created:** \`mixed_timeline.ogg\`\n`;
     } else {
-      message += `⚠️ **Timeline mixing failed** - individual clips are available.\n` +
-        `🔍 Check the \`recordings/${folderName}\` folder for individual audio clips.`;
+      message += `⚠️ **Timeline mixing failed** - individual clips are available.\n`;
     }
+    
+    // Add transcription status
+    if (transcriptPath) {
+      message += `📝 **Transcript created:** \`transcript.md\`\n`;
+    } else {
+      message += `⚠️ **Transcription failed** - audio files are still available.\n`;
+    }
+    
+    message += `\n🔍 Check the \`recordings/${folderName}\` folder for all files.`;
     
     await interaction.editReply(message);
     
