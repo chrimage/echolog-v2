@@ -1,6 +1,8 @@
 import { ChatInputCommandInteraction } from 'discord.js';
 import { VoiceRecordingState } from '../types/recording';
 import { stopRecordingSession } from '../utils/recording';
+import { mixSessionFolder } from '../utils/audio-mixer';
+import * as fs from 'fs';
 
 export async function handleStopCommand(
   interaction: ChatInputCommandInteraction,
@@ -36,41 +38,61 @@ export async function handleStopCommand(
     // Get folder name for display
     const folderName = session.folderPath.split('/').pop() || 'Unknown';
     
+    // Count actual recorded clips
+    const recordedClips = fs.readdirSync(session.folderPath)
+      .filter(file => file.endsWith('.ogg') && !file.startsWith('mixed_'))
+      .length;
+    
     // Stop the recording session
     stopRecordingSession(session);
     
     // Remove from active sessions
     recordingState.activeSessions.delete(interaction.guildId!);
     
+    // Attempt to mix audio timeline automatically
+    let mixedFilePath: string | null = null;
+    try {
+      await interaction.editReply('🔄 Stopping recording and creating mixed timeline...');
+      mixedFilePath = await mixSessionFolder(session.folderPath);
+      console.log(`🎵 Mixed timeline created: ${mixedFilePath}`);
+    } catch (mixError) {
+      console.warn(`⚠️ Audio mixing failed: ${mixError instanceof Error ? mixError.message : 'Unknown error'}`);
+      console.log(`📁 Individual clips are still available in: ${session.folderPath}`);
+    }
+    
     // Success response with session summary
     const startTimestamp = Math.floor(session.startTime.getTime() / 1000);
     const endTimestamp = Math.floor(new Date().getTime() / 1000);
     
-    await interaction.editReply(
-      `✅ **Recording stopped!**\n\n` +
+    // Build success message with mixing status
+    let message = `✅ **Recording stopped!**\n\n` +
       `📊 **Session Summary:**\n` +
       `⏰ **Duration:** ${durationMinutes}m ${durationSeconds}s\n` +
-      `🎙️ **Clips recorded:** ${session.clips.length}\n` +
+      `🎙️ **Clips recorded:** ${recordedClips}\n` +
       `📁 **Saved to:** \`${folderName}\`\n\n` +
       `📍 **Timeline:**\n` +
       `🟢 Started: <t:${startTimestamp}:T>\n` +
-      `🔴 Ended: <t:${endTimestamp}:T>\n\n` +
-      `🔍 Check the \`recordings/${folderName}\` folder for individual audio clips.`
-    );
+      `🔴 Ended: <t:${endTimestamp}:T>\n\n`;
+    
+    if (mixedFilePath) {
+      message += `🎵 **Mixed timeline created:** \`mixed_timeline.ogg\`\n` +
+        `🔍 Check the \`recordings/${folderName}\` folder for both individual clips and the mixed timeline.`;
+    } else {
+      message += `⚠️ **Timeline mixing failed** - individual clips are available.\n` +
+        `🔍 Check the \`recordings/${folderName}\` folder for individual audio clips.`;
+    }
+    
+    await interaction.editReply(message);
     
     // Log detailed session info
     console.log(`📝 Recording session ended:`);
     console.log(`   Guild: ${interaction.guild?.name} (${interaction.guildId})`);
     console.log(`   Duration: ${durationMinutes}m ${durationSeconds}s`);
-    console.log(`   Clips: ${session.clips.length}`);
+    console.log(`   Clips: ${recordedClips}`);
     console.log(`   Folder: ${folderName}`);
     
-    if (session.clips.length > 0) {
-      console.log(`   Clip details:`);
-      session.clips.forEach((clip, index) => {
-        const clipDuration = clip.duration ? `${Math.round(clip.duration / 1000)}s` : 'unknown';
-        console.log(`     ${index + 1}. ${clip.username} - ${clipDuration}`);
-      });
+    if (recordedClips > 0) {
+      console.log(`   Individual clips saved to folder`);
     }
     
   } catch (error) {
