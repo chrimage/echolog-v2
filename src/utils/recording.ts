@@ -6,13 +6,13 @@ import {
   EndBehaviorType,
   VoiceReceiver 
 } from '@discordjs/voice';
-import { VoiceBasedChannel, User } from 'discord.js';
+import { VoiceBasedChannel, User, Client } from 'discord.js';
 import { RecordingSession, AudioClipMetadata, DEFAULT_RECORDING_OPTIONS } from '../types/recording';
 import { createWriteStream } from 'fs';
-import { pipeline } from 'stream/promises';
-import * as prism from 'prism-media';
+import { pipeline } from 'stream';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as prism from 'prism-media';
 
 export async function connectToVoiceChannel(channel: VoiceBasedChannel): Promise<VoiceConnection> {
   const connection = joinVoiceChannel({
@@ -36,7 +36,8 @@ export async function connectToVoiceChannel(channel: VoiceBasedChannel): Promise
 
 export function createRecordingSession(
   channel: VoiceBasedChannel, 
-  connection: VoiceConnection
+  connection: VoiceConnection,
+  client: Client
 ): RecordingSession {
   const startTime = new Date();
   const folderName = formatTimestamp(startTime, true); // true for folder format
@@ -53,7 +54,7 @@ export function createRecordingSession(
     startTime,
     folderPath,
     connection,
-    userStreams: new Map(),
+    client,
     clips: []
   };
   
@@ -63,111 +64,107 @@ export function createRecordingSession(
 
 export function setupVoiceReceiver(session: RecordingSession): VoiceReceiver {
   const receiver = session.connection.receiver;
+  const activeRecordings = new Set<string>();
   
   receiver.speaking.on('start', async (userId) => {
-    try {
-      console.log(`🎤 User ${userId} started speaking`);
-      await createUserRecordingStream(session, userId);
-    } catch (error) {
-      console.error(`❌ Error starting recording for user ${userId}:`, error);
+    console.log(`🎤 User ${userId} started speaking`);
+    
+    // Only create one recording per user
+    if (!activeRecordings.has(userId)) {
+      activeRecordings.add(userId);
+      try {
+        const user = await getUserFromSession(session, userId);
+        createListeningStream(receiver, user, session, activeRecordings);
+      } catch (error) {
+        console.error(`❌ Error starting recording for user ${userId}:`, error);
+        activeRecordings.delete(userId);
+      }
     }
   });
   
-  receiver.speaking.on('end', (userId) => {
-    console.log(`🔇 User ${userId} stopped speaking`);
+  // Handle voice connection state changes
+  session.connection.on('stateChange', (oldState, newState) => {
+    console.log(`Voice connection state changed: ${oldState.status} -> ${newState.status}`);
+    
+    if (newState.status === 'disconnected' || newState.status === 'destroyed') {
+      console.log(`🔌 Connection lost, cleaning up ${activeRecordings.size} active recordings`);
+      activeRecordings.clear();
+    }
+  });
+  
+  // Handle users leaving the voice channel
+  session.client.on('voiceStateUpdate', (oldState, newState) => {
+    // User left the channel we're recording
+    if (oldState.channelId === session.channelId && newState.channelId !== session.channelId) {
+      const userId = oldState.member?.user.id;
+      if (userId && activeRecordings.has(userId)) {
+        console.log(`👋 User ${oldState.member?.user.username} left voice channel, ending their recording`);
+        activeRecordings.delete(userId);
+      }
+    }
   });
   
   console.log(`👂 Voice receiver setup complete`);
   return receiver;
 }
 
-export async function createUserRecordingStream(session: RecordingSession, userId: string): Promise<void> {
-  const receiver = session.connection.receiver;
+export function createListeningStream(receiver: VoiceReceiver, user: any, session: RecordingSession, activeRecordings: Set<string>): void {
+  const opusStream = receiver.subscribe(user.id, {
+    end: {
+      behavior: EndBehaviorType.AfterSilence,
+      duration: DEFAULT_RECORDING_OPTIONS.silenceDuration,
+    },
+  });
+
+  const filename = `${formatTimestamp(new Date(), false)}_${sanitizeUsername(user.username)}.ogg`;
+  const filePath = path.join(session.folderPath, filename);
+
+  console.log(`👂 Started recording ${filename}`);
   
-  // Don't create duplicate streams for the same user
-  if (session.userStreams.has(userId)) {
-    console.log(`⚠️ Stream already exists for user ${userId}, skipping`);
-    return;
-  }
-  
-  try {
-    // Get user info for filename
-    const user = await getUserFromSession(session, userId);
-    const startTime = new Date();
-    const filename = `${formatTimestamp(startTime, false)}_${sanitizeUsername(user.username)}.ogg`;
-    const filePath = path.join(session.folderPath, filename);
+  // Debug: check if we're getting any audio data
+  let dataReceived = false;
+  opusStream.on('data', (chunk) => {
+    if (!dataReceived) {
+      console.log(`📦 First audio chunk received for ${user.username}: ${chunk.length} bytes`);
+      dataReceived = true;
+    }
+  });
+
+  opusStream.on('end', () => {
+    console.log(`🔚 Audio stream ended for ${user.username}, received data: ${dataReceived}`);
+  });
+
+  const oggStream = new prism.opus.OggLogicalBitstream({
+    opusHead: new prism.opus.OpusHead({
+      channelCount: DEFAULT_RECORDING_OPTIONS.channels,
+      sampleRate: DEFAULT_RECORDING_OPTIONS.sampleRate,
+    }),
+    pageSizeControl: {
+      maxPackets: 10,
+    },
+  });
+
+  const out = createWriteStream(filePath);
+
+  pipeline(opusStream, oggStream, out, (err) => {
+    // Remove from active recordings when done
+    activeRecordings.delete(user.id);
     
-    console.log(`🎙️ Starting recording: ${filename}`);
-    
-    // Subscribe to user's audio stream with silence detection
-    const audioStream = receiver.subscribe(userId, {
-      end: {
-        behavior: EndBehaviorType.AfterSilence,
-        duration: DEFAULT_RECORDING_OPTIONS.silenceDuration,
-      },
-    });
-    
-    // Create Ogg stream for output
-    const oggStream = new prism.opus.OggLogicalBitstream({
-      opusHead: new prism.opus.OpusHead({
-        channelCount: DEFAULT_RECORDING_OPTIONS.channels,
-        sampleRate: DEFAULT_RECORDING_OPTIONS.sampleRate,
-      }),
-      pageSizeControl: {
-        maxPackets: 10,
-      },
-    });
-    
-    // Create file write stream
-    const fileStream = createWriteStream(filePath);
-    session.userStreams.set(userId, fileStream);
-    
-    // Create metadata entry
-    const clipMetadata: AudioClipMetadata = {
-      userId,
-      username: user.username,
-      startTime,
-      filePath,
-    };
-    session.clips.push(clipMetadata);
-    
-    // Pipeline audio stream to file
-    await pipeline(audioStream, oggStream, fileStream);
-    
-    // Calculate duration
-    const endTime = new Date();
-    clipMetadata.duration = endTime.getTime() - startTime.getTime();
-    
-    console.log(`✅ Finished recording: ${filename} (${clipMetadata.duration}ms)`);
-    
-    // Clean up
-    session.userStreams.delete(userId);
-    
-  } catch (error) {
-    console.error(`❌ Error in recording stream for user ${userId}:`, error);
-    
-    // Clean up on error
-    session.userStreams.delete(userId);
-  }
+    if (err) {
+      console.warn(`❌ Error recording file ${filename} - ${err.message}`);
+    } else {
+      console.log(`✅ Recorded ${filename}`);
+    }
+  });
 }
 
 export function stopRecordingSession(session: RecordingSession): void {
   console.log(`🛑 Stopping recording session in guild ${session.guildId}`);
   
-  // Close all user streams
-  for (const [userId, stream] of session.userStreams) {
-    try {
-      stream.end();
-      console.log(`🔚 Closed stream for user ${userId}`);
-    } catch (error) {
-      console.error(`❌ Error closing stream for user ${userId}:`, error);
-    }
-  }
+  // Remove voice state update listeners to prevent memory leaks
+  session.client.removeAllListeners('voiceStateUpdate');
   
-  // Clear the streams map
-  session.userStreams.clear();
-  
-  // Destroy voice connection
+  // Destroy voice connection (this will trigger stateChange cleanup)
   session.connection.destroy();
   console.log(`🔌 Disconnected from voice channel`);
   
@@ -201,7 +198,7 @@ function sanitizeUsername(username: string): string {
 async function getUserFromSession(session: RecordingSession, userId: string): Promise<User> {
   // Try to get user from the guild first
   const guild = session.connection.joinConfig.guildId;
-  const client = session.connection.voice?.client;
+  const client = session.client;
   
   if (client) {
     try {

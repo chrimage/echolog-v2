@@ -1,5 +1,5 @@
 import { VoiceConnection } from '@discordjs/voice';
-import { Writable } from 'stream';
+import { Client } from 'discord.js';
 
 export interface AudioClipMetadata {
   userId: string;
@@ -15,7 +15,7 @@ export interface RecordingSession {
   startTime: Date;
   folderPath: string;
   connection: VoiceConnection;
-  userStreams: Map<string, Writable>;
+  client: Client;
   clips: AudioClipMetadata[];
 }
 

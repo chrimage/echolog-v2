@@ -17,7 +17,7 @@ const commands = [
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
 
-async function deployCommands() {
+export async function deployCommands() {
   try {
     console.log('🔄 Started refreshing application (/) commands.');
 
@@ -28,7 +28,7 @@ async function deployCommands() {
       throw new Error('CLIENT_ID is required in .env file');
     }
 
-    let route: string;
+    let route: `/${string}`;
     let scope: string;
 
     if (guildId) {
@@ -49,8 +49,11 @@ async function deployCommands() {
     
   } catch (error) {
     console.error('❌ Error deploying commands:', error);
-    process.exit(1);
+    throw error;
   }
 }
 
-deployCommands();
+// Only run if this file is executed directly
+if (require.main === module) {
+  deployCommands().catch(() => process.exit(1));
+}

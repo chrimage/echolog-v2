@@ -58,7 +58,7 @@ export async function handleJoinCommand(
     const connection = await connectToVoiceChannel(voiceChannel);
     
     // Create recording session
-    const session = createRecordingSession(voiceChannel, connection);
+    const session = createRecordingSession(voiceChannel, connection, interaction.client);
     
     // Setup voice receiver for recording
     setupVoiceReceiver(session);

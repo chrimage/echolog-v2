@@ -1,5 +1,6 @@
 import { Client, GatewayIntentBits, Events, PermissionsBitField, OAuth2Scopes } from 'discord.js';
 import { VoiceRecordingState } from './types/recording';
+import { deployCommands } from './deploy-commands';
 import * as dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
@@ -27,9 +28,17 @@ if (!fs.existsSync(recordingsDir)) {
 }
 
 // Bot ready event
-client.once(Events.ClientReady, (readyClient) => {
+client.once(Events.ClientReady, async (readyClient) => {
   console.log(`✅ Logged in as ${readyClient.user.tag}!`);
   console.log(`🤖 Bot ID: ${readyClient.user.id}`);
+  
+  // Deploy slash commands automatically
+  try {
+    await deployCommands();
+  } catch (error) {
+    console.error('❌ Failed to deploy commands on startup:', error);
+    console.log('⚠️ Bot will continue running, but slash commands may not work');
+  }
   
   // Generate and display invite link
   const inviteUrl = client.generateInvite({
@@ -109,12 +118,7 @@ process.on('SIGINT', async () => {
     session.connection.destroy();
   }
   
-  // Close all user streams
-  for (const session of recordingState.activeSessions.values()) {
-    for (const stream of session.userStreams.values()) {
-      stream.end();
-    }
-  }
+  // Sessions will clean up automatically when connections are destroyed
   
   recordingState.activeSessions.clear();
   
