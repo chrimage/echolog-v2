@@ -1,0 +1,27 @@
+# Development configuration (self-signed cert)
+# For production, replace with your actual domain
+{$DOMAIN:localhost} {
+	# Enable automatic HTTPS
+	# In development, this will generate a self-signed certificate
+	# In production with a real domain, this will use Let's Encrypt
+	
+	# Reverse proxy to the Node.js application
+	reverse_proxy echolog-v2:3000 {
+		# Add some useful headers
+		header_up Host {host}
+		header_up X-Real-IP {remote}
+		header_up X-Forwarded-For {remote}
+		header_up X-Forwarded-Proto {scheme}
+	}
+	
+	# Enable access logs
+	log {
+		output stdout
+		format console
+	}
+	
+	# Health check endpoint for monitoring
+	handle /caddy/health {
+		respond "OK" 200
+	}
+}

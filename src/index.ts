@@ -19,7 +19,9 @@ export const recordingState: VoiceRecordingState = {
 
 // Web server instance
 const webServerPort = process.env[WEB_SERVER.PORT_ENV] ? parseInt(process.env[WEB_SERVER.PORT_ENV]!) : WEB_SERVER.DEFAULT_PORT;
-export const webServer = new WebServer(webServerPort);
+const domain = process.env.DOMAIN || 'localhost';
+const externalUrl = `https://${domain}`;
+export const webServer = new WebServer(webServerPort, externalUrl);
 
 // Create Discord client with required intents
 const client = new Client({

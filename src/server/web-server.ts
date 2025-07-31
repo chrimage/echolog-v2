@@ -17,9 +17,10 @@ export class WebServer {
   private port: number;
   private baseUrl: string;
 
-  constructor(port: number = 3000) {
+  constructor(port: number = 3000, externalUrl?: string) {
     this.port = port;
-    this.baseUrl = `http://localhost:${port}`;
+    // Use external URL if provided, otherwise default to localhost
+    this.baseUrl = externalUrl || `http://localhost:${port}`;
     this.app = express();
     this.setupRoutes();
     this.setupCleanupInterval();
@@ -29,6 +30,17 @@ export class WebServer {
     // Health check endpoint
     this.app.get('/health', (req: Request, res: Response) => {
       res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    });
+
+    // Test endpoint for container verification
+    this.app.get('/test', (req: Request, res: Response) => {
+      res.json({ 
+        message: 'EchoLog v2 Discord Bot is running!',
+        status: 'container_ready',
+        timestamp: new Date().toISOString(),
+        port: this.port,
+        baseUrl: this.baseUrl
+      });
     });
 
     // Secure download endpoint

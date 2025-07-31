@@ -1,0 +1,11 @@
+node_modules
+.git
+.env*
+*.md
+README.md
+.gitignore
+docker-compose.yml
+Dockerfile
+Caddyfile
+recordings/*
+!recordings/.gitkeep

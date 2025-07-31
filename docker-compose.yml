@@ -1,0 +1,52 @@
+services:
+  echolog-v2:
+    build: .
+    container_name: echolog-v2
+    restart: unless-stopped
+    # Remove direct port exposure - only accessible via Caddy
+    expose:
+      - "3000"
+    volumes:
+      # Bind mount recordings directory to persist data (with SELinux label)
+      - ./recordings:/app/recordings:Z
+    env_file:
+      # Load environment variables from .env file
+      - .env
+    environment:
+      # Override port if needed (optional)
+      - WEB_SERVER_PORT=3000
+    networks:
+      - echolog-network
+    # Uncomment to see logs in interactive mode
+    # stdin_open: true
+    # tty: true
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: echolog-caddy
+    restart: unless-stopped
+    ports:
+      # HTTP and HTTPS ports
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Caddy configuration (with SELinux label)
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro,Z
+      # Persistent storage for certificates and data
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      # Domain configuration - defaults to localhost for development
+      - DOMAIN=${DOMAIN:-localhost}
+    networks:
+      - echolog-network
+    depends_on:
+      - echolog-v2
+
+networks:
+  echolog-network:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
