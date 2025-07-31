@@ -3,7 +3,8 @@ import { VoiceRecordingState } from './types/recording';
 import { deployCommands } from './deploy-commands';
 import { handleJoinCommand } from './commands/join';
 import { handleStopCommand } from './commands/stop';
-import { DISCORD, FILESYSTEM, ERROR_MESSAGES, LOG_PREFIXES } from './config/constants';
+import { WebServer } from './server/web-server';
+import { DISCORD, FILESYSTEM, WEB_SERVER, ERROR_MESSAGES, SUCCESS_MESSAGES, LOG_PREFIXES } from './config/constants';
 import * as dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
@@ -15,6 +16,10 @@ dotenv.config();
 export const recordingState: VoiceRecordingState = {
   activeSessions: new Map()
 };
+
+// Web server instance
+const webServerPort = process.env[WEB_SERVER.PORT_ENV] ? parseInt(process.env[WEB_SERVER.PORT_ENV]!) : WEB_SERVER.DEFAULT_PORT;
+export const webServer = new WebServer(webServerPort);
 
 // Create Discord client with required intents
 const client = new Client({
@@ -34,6 +39,15 @@ if (!fs.existsSync(recordingsDir)) {
 client.once(Events.ClientReady, async (readyClient) => {
   console.log(`${LOG_PREFIXES.SUCCESS} Logged in as ${readyClient.user.tag}!`);
   console.log(`🤖 Bot ID: ${readyClient.user.id}`);
+  
+  // Start web server
+  try {
+    await webServer.start();
+    console.log(`${LOG_PREFIXES.SUCCESS} ${SUCCESS_MESSAGES.WEB_SERVER_STARTED} on ${webServer.getBaseUrl()}`);
+  } catch (error) {
+    console.error(`${LOG_PREFIXES.ERROR} Failed to start web server:`, error);
+    console.log('⚠️ Bot will continue running, but download links will not be available');
+  }
   
   // Deploy slash commands automatically
   try {
@@ -58,6 +72,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   console.log(`\n🔗 Invite the bot to your server:`);
   console.log(inviteUrl);
   console.log(`\n📁 Recordings will be saved to: ${recordingsDir}`);
+  console.log(`🌐 Download server: ${webServer.getBaseUrl()}`);
   console.log(`🎧 Ready to record voice channels!`);
 });
 
@@ -74,7 +89,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         break;
       
       case 'stop':
-        await handleStopCommand(interaction, recordingState);
+        await handleStopCommand(interaction, recordingState, webServer);
         break;
       
       default:
@@ -120,8 +135,14 @@ process.on('SIGINT', async () => {
   }
   
   // Sessions will clean up automatically when connections are destroyed
-  
   recordingState.activeSessions.clear();
+  
+  // Stop web server
+  try {
+    await webServer.stop();
+  } catch (error) {
+    console.error(`${LOG_PREFIXES.ERROR} Error stopping web server:`, error);
+  }
   
   await client.destroy();
   console.log('👋 Bot shut down successfully.');

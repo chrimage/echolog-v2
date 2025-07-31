@@ -3,12 +3,15 @@ import { VoiceRecordingState } from '../types/recording';
 import { stopRecordingSession } from '../utils/recording';
 import { mixSessionFolder } from '../utils/audio-mixer';
 import { transcribeSessionFolder } from '../utils/transcription';
-import { ERROR_MESSAGES, SUCCESS_MESSAGES, LOG_PREFIXES, FILESYSTEM } from '../config/constants';
+import { WebServer } from '../server/web-server';
+import { ERROR_MESSAGES, SUCCESS_MESSAGES, LOG_PREFIXES, FILESYSTEM, WEB_SERVER } from '../config/constants';
 import * as fs from 'fs';
+import * as path from 'path';
 
 export async function handleStopCommand(
   interaction: ChatInputCommandInteraction,
-  recordingState: VoiceRecordingState
+  recordingState: VoiceRecordingState,
+  webServer: WebServer
 ): Promise<void> {
   // Defer reply to give us more time
   await interaction.deferReply();
@@ -98,8 +101,42 @@ export async function handleStopCommand(
     } else {
       message += `${LOG_PREFIXES.WARNING} **Transcription failed** - audio files are still available.\n`;
     }
-    
-    message += `\n🔍 Check the \`${FILESYSTEM.RECORDINGS_DIR}/${folderName}\` folder for all files.`;
+
+    // Generate download links for available files
+    const downloadLinks: string[] = [];
+    try {
+      // Check which files exist and generate tokens for them
+      if (mixedFilePath && fs.existsSync(mixedFilePath)) {
+        const token = webServer.generateDownloadToken(mixedFilePath, folderName, WEB_SERVER.TOKEN_EXPIRY_HOURS);
+        const downloadUrl = webServer.generateDownloadUrl(token, FILESYSTEM.MIXED_TIMELINE_FILENAME);
+        downloadLinks.push(`🎵 **Mixed Audio:** [${FILESYSTEM.MIXED_TIMELINE_FILENAME}](${downloadUrl})`);
+      }
+
+      if (transcriptPath && fs.existsSync(transcriptPath)) {
+        const token = webServer.generateDownloadToken(transcriptPath, folderName, WEB_SERVER.TOKEN_EXPIRY_HOURS);
+        const downloadUrl = webServer.generateDownloadUrl(token, FILESYSTEM.TRANSCRIPT_FILENAME);
+        downloadLinks.push(`📝 **Transcript:** [${FILESYSTEM.TRANSCRIPT_FILENAME}](${downloadUrl})`);
+      }
+
+      // Check for summary file
+      const summaryPath = path.join(session.folderPath, FILESYSTEM.SUMMARY_FILENAME);
+      if (fs.existsSync(summaryPath)) {
+        const token = webServer.generateDownloadToken(summaryPath, folderName, WEB_SERVER.TOKEN_EXPIRY_HOURS);
+        const downloadUrl = webServer.generateDownloadUrl(token, FILESYSTEM.SUMMARY_FILENAME);
+        downloadLinks.push(`📄 **Summary:** [${FILESYSTEM.SUMMARY_FILENAME}](${downloadUrl})`);
+      }
+
+      if (downloadLinks.length > 0) {
+        message += `\n\n📥 **Download Links:**\n${downloadLinks.join('\n')}\n`;
+        message += `⏰ *Links expire in ${WEB_SERVER.TOKEN_EXPIRY_HOURS} hours*`;
+        console.log(`${LOG_PREFIXES.SUCCESS} ${SUCCESS_MESSAGES.DOWNLOAD_LINKS_GENERATED} for session: ${folderName}`);
+      } else {
+        message += `\n🔍 Check the \`${FILESYSTEM.RECORDINGS_DIR}/${folderName}\` folder for all files.`;
+      }
+    } catch (linkError) {
+      console.warn(`${LOG_PREFIXES.WARNING} Failed to generate download links: ${linkError instanceof Error ? linkError.message : 'Unknown error'}`);
+      message += `\n🔍 Check the \`${FILESYSTEM.RECORDINGS_DIR}/${folderName}\` folder for all files.`;
+    }
     
     await interaction.editReply(message);
     

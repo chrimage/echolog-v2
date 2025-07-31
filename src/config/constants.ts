@@ -95,6 +95,18 @@ export const FILESYSTEM = {
   TRANSCRIPT_EXTENSION: '.md',
 } as const;
 
+// Web Server Constants
+export const WEB_SERVER = {
+  /** Default port for the web server */
+  DEFAULT_PORT: 3000,
+  /** Download token expiry in hours */
+  TOKEN_EXPIRY_HOURS: 48,
+  /** Base URL environment variable name */
+  BASE_URL_ENV: 'WEB_SERVER_BASE_URL',
+  /** Port environment variable name */
+  PORT_ENV: 'WEB_SERVER_PORT',
+} as const;
+
 // Discord Constants
 export const DISCORD = {
   /** Required intents for the bot */
@@ -140,6 +152,8 @@ export const SUCCESS_MESSAGES = {
   TRANSCRIPT_CREATED: 'Transcript created successfully',
   MIXED_TIMELINE_CREATED: 'Mixed timeline created successfully',
   SUMMARY_CREATED: 'Summary created successfully',
+  WEB_SERVER_STARTED: 'Web server started successfully',
+  DOWNLOAD_LINKS_GENERATED: 'Download links generated',
 } as const;
 
 // Logging Prefixes
