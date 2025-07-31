@@ -38,6 +38,25 @@ export const TRANSCRIPTION = {
   API_ENDPOINT: 'https://api.groq.com/openai/v1/audio/transcriptions',
 } as const;
 
+// Summarization Constants
+export const SUMMARIZATION = {
+  /** Groq model for summarization */
+  MODEL: 'llama-3.3-70b-versatile',
+  /** Temperature for summary generation (0 = more deterministic) */
+  TEMPERATURE: 0.1,
+  /** System prompt for STT-aware summarization */
+  SYSTEM_PROMPT: `You are a professional meeting summarizer. The transcript you'll receive was generated using automatic speech-to-text (STT) technology, so be aware of potential transcription quirks:
+
+- Common STT issues: homophones (there/their), run-on sentences, missing punctuation, background noise artifacts
+- Speaker attribution is accurate - each username represents one Discord participant, though note that multiple people in the same room may appear as speech from one participant
+- Focus on extracting key topics, decisions, action items, and important discussions
+- Maintain speaker attribution where relevant and clear
+- If you notice obvious transcription errors, use context to infer the intended meaning
+- Organize the summary in a clear, readable format with sections
+
+Provide a concise but comprehensive summary that captures the essence of the conversation.`,
+} as const;
+
 // VAD (Voice Activity Detection) Constants
 export const VAD = {
   /** Positive speech threshold (higher = more strict) */
@@ -66,6 +85,8 @@ export const FILESYSTEM = {
   MIXED_TIMELINE_FILENAME: 'mixed_timeline.ogg',
   /** Transcript filename */
   TRANSCRIPT_FILENAME: 'transcript.md',
+  /** Summary filename */
+  SUMMARY_FILENAME: 'summary.md',
   /** VAD temporary file suffix */
   VAD_TEMP_SUFFIX: '_vad_temp.wav',
   /** File extension for audio recordings */
@@ -108,6 +129,7 @@ export const ERROR_MESSAGES = {
   NO_OGG_FILES: 'No OGG files found to transcribe',
   NO_TRANSCRIBABLE_SEGMENTS: 'No transcribable segments found in any audio files',
   USER_FETCH_FAILED: 'Could not access client to fetch user information',
+  SUMMARIZATION_FAILED: 'Failed to generate summary',
 } as const;
 
 // Success Messages
@@ -117,6 +139,7 @@ export const SUCCESS_MESSAGES = {
   RECORDING_STOPPED: 'Recording stopped successfully',
   TRANSCRIPT_CREATED: 'Transcript created successfully',
   MIXED_TIMELINE_CREATED: 'Mixed timeline created successfully',
+  SUMMARY_CREATED: 'Summary created successfully',
 } as const;
 
 // Logging Prefixes

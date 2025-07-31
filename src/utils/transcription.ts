@@ -1,7 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
-import { TRANSCRIPTION, FILESYSTEM } from '../config/constants';
+import Groq from 'groq-sdk';
+import { TRANSCRIPTION, FILESYSTEM, SUMMARIZATION, ERROR_MESSAGES, SUCCESS_MESSAGES, LOG_PREFIXES } from '../config/constants';
 
 export interface TranscriptionSegment {
   speaker: string;
@@ -95,10 +96,13 @@ export async function transcribeSessionFolder(folderPath: string): Promise<strin
   const sessionEnd = new Date();
   const sessionDuration = sessionEnd.getTime() - sessionStart!.getTime();
   
+  // Merge consecutive segments from the same speaker
+  const mergedSegments = mergeConsecutiveSegments(allSegments);
+  
   // Generate markdown transcript
   const transcriptPath = path.join(folderPath, FILESYSTEM.TRANSCRIPT_FILENAME);
   const transcriptContent = generateMarkdownTranscript({
-    segments: allSegments,
+    segments: mergedSegments,
     sessionStart: sessionStart!,
     sessionDuration
   }, path.basename(folderPath));
@@ -106,7 +110,19 @@ export async function transcribeSessionFolder(folderPath: string): Promise<strin
   fs.writeFileSync(transcriptPath, transcriptContent, 'utf-8');
   
   console.log(`📄 Transcript saved: ${transcriptPath}`);
-  console.log(`📊 Transcription summary: ${allSegments.length} segments from ${files.length} files`);
+  console.log(`📊 Transcription summary: ${allSegments.length} segments → ${mergedSegments.length} merged segments from ${files.length} files`);
+  
+  // Generate summary
+  try {
+    console.log(`🤖 Generating summary...`);
+    const summaryContent = await generateSummary(transcriptContent, path.basename(folderPath));
+    const summaryPath = path.join(folderPath, FILESYSTEM.SUMMARY_FILENAME);
+    fs.writeFileSync(summaryPath, summaryContent, 'utf-8');
+    console.log(`${LOG_PREFIXES.SUCCESS} ${SUCCESS_MESSAGES.SUMMARY_CREATED}: ${summaryPath}`);
+  } catch (error) {
+    console.warn(`${LOG_PREFIXES.WARNING} ${ERROR_MESSAGES.SUMMARIZATION_FAILED}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    // Continue execution - summarization failure shouldn't block transcript generation
+  }
   
   return transcriptPath;
 }
@@ -169,6 +185,76 @@ function extractUsernameFromFilename(filename: string): string {
   }
   
   return usernameMatch[1];
+}
+
+function mergeConsecutiveSegments(segments: TranscriptionSegment[]): TranscriptionSegment[] {
+  if (segments.length === 0) return segments;
+  
+  const merged: TranscriptionSegment[] = [];
+  let current = { ...segments[0] };
+  
+  for (let i = 1; i < segments.length; i++) {
+    const next = segments[i];
+    
+    if (current.speaker === next.speaker) {
+      // Merge with current segment
+      current.text += ` ${next.text}`;
+      current.endTime = next.endTime;
+      // Average the confidence and noSpeechProb
+      current.confidence = (current.confidence + next.confidence) / 2;
+      current.noSpeechProb = (current.noSpeechProb + next.noSpeechProb) / 2;
+    } else {
+      // Save current and start new
+      merged.push(current);
+      current = { ...next };
+    }
+  }
+  
+  // Don't forget the last segment
+  merged.push(current);
+  
+  return merged;
+}
+
+async function generateSummary(transcriptContent: string, sessionFolderName: string): Promise<string> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error(ERROR_MESSAGES.GROQ_API_KEY_MISSING);
+  }
+
+  const groq = new Groq({ apiKey });
+
+  try {
+    const completion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: "system",
+          content: SUMMARIZATION.SYSTEM_PROMPT,
+        },
+        {
+          role: "user",
+          content: `Please summarize the following Discord voice channel transcript:\n\n${transcriptContent}`,
+        },
+      ],
+      model: SUMMARIZATION.MODEL,
+      temperature: SUMMARIZATION.TEMPERATURE,
+    });
+
+    const summaryText = completion.choices[0]?.message?.content || 'No summary generated.';
+    
+    // Format the summary as markdown
+    let summary = `# Recording Summary\n\n`;
+    summary += `**Session:** ${sessionFolderName}\n`;
+    summary += `**Generated:** ${new Date().toISOString()}\n\n`;
+    summary += `---\n\n`;
+    summary += summaryText;
+    summary += `\n\n---\n\n`;
+    summary += `*Summary generated automatically using ${SUMMARIZATION.MODEL}*\n`;
+    
+    return summary;
+  } catch (error) {
+    throw new Error(`${ERROR_MESSAGES.SUMMARIZATION_FAILED}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 function generateMarkdownTranscript(result: TranscriptionResult, sessionFolderName: string): string {
