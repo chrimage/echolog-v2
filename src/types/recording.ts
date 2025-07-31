@@ -1,5 +1,12 @@
 import { VoiceConnection } from '@discordjs/voice';
 import { Client } from 'discord.js';
+import { RECORDING } from '../config/constants';
+
+export enum RecordingState {
+  IDLE = 'idle',
+  RECORDING = 'recording',
+  STOPPING = 'stopping'
+}
 
 export interface AudioClipMetadata {
   userId: string;
@@ -17,6 +24,7 @@ export interface RecordingSession {
   connection: VoiceConnection;
   client: Client;
   clips: AudioClipMetadata[];
+  voiceStateListener?: (oldState: any, newState: any) => void;
 }
 
 export interface VoiceRecordingState {
@@ -37,8 +45,8 @@ export interface RecordingOptions {
 }
 
 export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
-  silenceDuration: 1000,
+  silenceDuration: RECORDING.DEFAULT_SILENCE_DURATION,
   outputFormat: 'ogg',
-  sampleRate: 48000,
-  channels: 2,
+  sampleRate: RECORDING.DEFAULT_SAMPLE_RATE,
+  channels: RECORDING.DEFAULT_CHANNELS,
 };

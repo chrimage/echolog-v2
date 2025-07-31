@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, GuildMember, VoiceBasedChannel } from 'discord.js';
 import { VoiceRecordingState } from '../types/recording';
+import { ERROR_MESSAGES, SUCCESS_MESSAGES, LOG_PREFIXES } from '../config/constants';
 import { 
   connectToVoiceChannel, 
   createRecordingSession, 
@@ -16,7 +17,7 @@ export async function handleJoinCommand(
   try {
     // Check if user is in a guild
     if (!interaction.inGuild()) {
-      await interaction.editReply('❌ This command can only be used in a server!');
+      await interaction.editReply(`${LOG_PREFIXES.ERROR} ${ERROR_MESSAGES.GUILD_ONLY_COMMAND}`);
       return;
     }
     
@@ -25,7 +26,7 @@ export async function handleJoinCommand(
     const voiceChannel = member.voice.channel as VoiceBasedChannel;
     
     if (!voiceChannel) {
-      await interaction.editReply('❌ You need to be in a voice channel first!');
+      await interaction.editReply(`${LOG_PREFIXES.ERROR} ${ERROR_MESSAGES.NOT_IN_VOICE_CHANNEL}`);
       return;
     }
     
@@ -33,9 +34,8 @@ export async function handleJoinCommand(
     if (recordingState.activeSessions.has(interaction.guildId!)) {
       const existingSession = recordingState.activeSessions.get(interaction.guildId!);
       await interaction.editReply(
-        `⚠️ Already recording in this server!\n` +
-        `📁 Current session: <#${existingSession?.channelId}>\n` +
-        `⏰ Started: <t:${Math.floor(existingSession!.startTime.getTime() / 1000)}:R>`
+        `${LOG_PREFIXES.WARNING} ${ERROR_MESSAGES.ALREADY_RECORDING}\n` +
+        `📁 Current session: <#${existingSession?.channelId}> (started <t:${Math.floor(existingSession!.startTime.getTime() / 1000)}:R>)`
       );
       return;
     }
@@ -43,11 +43,14 @@ export async function handleJoinCommand(
     // Check bot permissions
     const permissions = voiceChannel.permissionsFor(interaction.client.user!);
     if (!permissions?.has(['Connect', 'Speak', 'UseVAD'])) {
+      const missingPerms = [];
+      if (!permissions?.has('Connect')) missingPerms.push('Connect');
+      if (!permissions?.has('Speak')) missingPerms.push('Speak');
+      if (!permissions?.has('UseVAD')) missingPerms.push('Use Voice Activity');
+      
       await interaction.editReply(
-        '❌ I need the following permissions in that voice channel:\n' +
-        '• Connect\n' +
-        '• Speak\n' +
-        '• Use Voice Activity'
+        `${LOG_PREFIXES.ERROR} ${ERROR_MESSAGES.BOT_NO_VOICE_PERMISSIONS}\n` +
+        `Missing: ${missingPerms.join(', ')}`
       );
       return;
     }
@@ -58,7 +61,7 @@ export async function handleJoinCommand(
     const connection = await connectToVoiceChannel(voiceChannel);
     
     // Create recording session
-    const session = createRecordingSession(voiceChannel, connection, interaction.client);
+    const session = await createRecordingSession(voiceChannel, connection, interaction.client);
     
     // Setup voice receiver for recording
     setupVoiceReceiver(session);
@@ -80,13 +83,13 @@ export async function handleJoinCommand(
     // Success response
     const startTimestamp = Math.floor(session.startTime.getTime() / 1000);
     await interaction.editReply(
-      `✅ **Recording started!**\n\n` +
+      `${LOG_PREFIXES.SUCCESS} **${SUCCESS_MESSAGES.RECORDING_STARTED}**\n\n` +
       `📍 **Channel:** ${voiceChannel.name}\n` +
       `⏰ **Started:** <t:${startTimestamp}:F>\n` +
       `📁 **Folder:** \`${session.folderPath.split('/').pop()}\`\n\n` +
-      `🎙️ I'll record individual clips when users speak.\n` +
+      `${LOG_PREFIXES.RECORDING} I'll record individual clips when users speak.\n` +
       `🔇 Clips end after 1 second of silence.\n` +
-      `🛑 Use \`/stop\` to stop recording and leave the channel.`
+      `${LOG_PREFIXES.STOP} Use \`/stop\` to stop recording and leave the channel.`
     );
     
     console.log(`🎬 Started recording in ${voiceChannel.guild.name}#${voiceChannel.name}`);
@@ -102,12 +105,7 @@ export async function handleJoinCommand(
     }
     
     await interaction.editReply(
-      `❌ **Failed to start recording!**\n\n` +
-      `**Error:** ${error instanceof Error ? error.message : 'Unknown error'}\n\n` +
-      `**Troubleshooting:**\n` +
-      `• Make sure I have permission to join your voice channel\n` +
-      `• Try leaving and rejoining the voice channel\n` +
-      `• Check if another bot is already connected`
+      `${LOG_PREFIXES.ERROR} **${ERROR_MESSAGES.CONNECTION_FAILED}:** ${error instanceof Error ? error.message : 'Unknown error'}`
     );
   }
 }

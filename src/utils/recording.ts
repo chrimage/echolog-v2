@@ -7,7 +7,8 @@ import {
   VoiceReceiver 
 } from '@discordjs/voice';
 import { VoiceBasedChannel, User, Client } from 'discord.js';
-import { RecordingSession, AudioClipMetadata, DEFAULT_RECORDING_OPTIONS } from '../types/recording';
+import { RecordingSession, AudioClipMetadata, DEFAULT_RECORDING_OPTIONS, RecordingState } from '../types/recording';
+import { VOICE_CONNECTION, RECORDING, FILESYSTEM, LOG_PREFIXES, ERROR_MESSAGES } from '../config/constants';
 import { createWriteStream } from 'fs';
 import { pipeline } from 'stream';
 import * as fs from 'fs';
@@ -19,33 +20,35 @@ export async function connectToVoiceChannel(channel: VoiceBasedChannel): Promise
     channelId: channel.id,
     guildId: channel.guild.id,
     adapterCreator: channel.guild.voiceAdapterCreator,
-    selfDeaf: false,  // We need to hear to record
-    selfMute: true,   // We don't need to speak
+    selfDeaf: VOICE_CONNECTION.SELF_DEAF,
+    selfMute: VOICE_CONNECTION.SELF_MUTE,
   });
 
   try {
     // Wait for connection to be ready
-    await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
-    console.log(`✅ Connected to voice channel: ${channel.name} in ${channel.guild.name}`);
+    await entersState(connection, VoiceConnectionStatus.Ready, VOICE_CONNECTION.CONNECTION_TIMEOUT);
+    console.log(`${LOG_PREFIXES.SUCCESS} Connected to voice channel: ${channel.name} in ${channel.guild.name}`);
     return connection;
   } catch (error) {
     connection.destroy();
-    throw new Error(`Failed to connect to voice channel within 30 seconds: ${error}`);
+    throw new Error(`${ERROR_MESSAGES.CONNECTION_FAILED} within ${VOICE_CONNECTION.CONNECTION_TIMEOUT / 1000} seconds: ${error}`);
   }
 }
 
-export function createRecordingSession(
+export async function createRecordingSession(
   channel: VoiceBasedChannel, 
   connection: VoiceConnection,
   client: Client
-): RecordingSession {
+): Promise<RecordingSession> {
   const startTime = new Date();
   const folderName = formatTimestamp(startTime, true); // true for folder format
-  const folderPath = path.join(process.cwd(), 'recordings', folderName);
+  const folderPath = path.join(process.cwd(), FILESYSTEM.RECORDINGS_DIR, folderName);
   
   // Create recording folder
-  if (!fs.existsSync(folderPath)) {
-    fs.mkdirSync(folderPath, { recursive: true });
+  try {
+    await fs.promises.access(folderPath);
+  } catch {
+    await fs.promises.mkdir(folderPath, { recursive: true });
   }
   
   const session: RecordingSession = {
@@ -58,26 +61,29 @@ export function createRecordingSession(
     clips: []
   };
   
-  console.log(`📁 Created recording session folder: ${folderPath}`);
+  console.log(`${LOG_PREFIXES.FOLDER} Created recording session folder: ${folderPath}`);
   return session;
 }
 
 export function setupVoiceReceiver(session: RecordingSession): VoiceReceiver {
   const receiver = session.connection.receiver;
-  const activeRecordings = new Set<string>();
+  const userRecordingStates = new Map<string, RecordingState>();
   
   receiver.speaking.on('start', async (userId) => {
-    console.log(`🎤 User ${userId} started speaking`);
+    console.log(`${LOG_PREFIXES.VOICE} User ${userId} started speaking`);
     
-    // Only create one recording per user
-    if (!activeRecordings.has(userId)) {
-      activeRecordings.add(userId);
+    const currentState = userRecordingStates.get(userId) || RecordingState.IDLE;
+    
+    // Only start recording if user is idle
+    if (currentState === RecordingState.IDLE) {
+      userRecordingStates.set(userId, RecordingState.RECORDING);
+      
       try {
         const user = await getUserFromSession(session, userId);
-        createListeningStream(receiver, user, session, activeRecordings);
+        createListeningStream(receiver, user, session, userRecordingStates);
       } catch (error) {
-        console.error(`❌ Error starting recording for user ${userId}:`, error);
-        activeRecordings.delete(userId);
+        console.error(`${LOG_PREFIXES.ERROR} Error starting recording for user ${userId}:`, error);
+        userRecordingStates.set(userId, RecordingState.IDLE);
       }
     }
   });
@@ -87,28 +93,37 @@ export function setupVoiceReceiver(session: RecordingSession): VoiceReceiver {
     console.log(`Voice connection state changed: ${oldState.status} -> ${newState.status}`);
     
     if (newState.status === 'disconnected' || newState.status === 'destroyed') {
-      console.log(`🔌 Connection lost, cleaning up ${activeRecordings.size} active recordings`);
-      activeRecordings.clear();
+      console.log(`🔌 Connection lost, cleaning up ${userRecordingStates.size} active recordings`);
+      userRecordingStates.clear();
     }
   });
   
-  // Handle users leaving the voice channel
-  session.client.on('voiceStateUpdate', (oldState, newState) => {
+  // Create a specific listener for this session and store it
+  const voiceStateListener = (oldState: any, newState: any) => {
     // User left the channel we're recording
     if (oldState.channelId === session.channelId && newState.channelId !== session.channelId) {
       const userId = oldState.member?.user.id;
-      if (userId && activeRecordings.has(userId)) {
+      if (userId && userRecordingStates.has(userId)) {
         console.log(`👋 User ${oldState.member?.user.username} left voice channel, ending their recording`);
-        activeRecordings.delete(userId);
+        userRecordingStates.set(userId, RecordingState.IDLE);
       }
     }
-  });
+  };
+  
+  // Add the listener and store it on the session for later removal
+  session.client.on('voiceStateUpdate', voiceStateListener);
+  session.voiceStateListener = voiceStateListener;
   
   console.log(`👂 Voice receiver setup complete`);
   return receiver;
 }
 
-export function createListeningStream(receiver: VoiceReceiver, user: any, session: RecordingSession, activeRecordings: Set<string>): void {
+export function createListeningStream(
+  receiver: VoiceReceiver, 
+  user: any, 
+  session: RecordingSession, 
+  userRecordingStates: Map<string, RecordingState>
+): void {
   const opusStream = receiver.subscribe(user.id, {
     end: {
       behavior: EndBehaviorType.AfterSilence,
@@ -140,20 +155,20 @@ export function createListeningStream(receiver: VoiceReceiver, user: any, sessio
       sampleRate: DEFAULT_RECORDING_OPTIONS.sampleRate,
     }),
     pageSizeControl: {
-      maxPackets: 10,
+      maxPackets: RECORDING.MAX_PACKETS_PER_PAGE,
     },
   });
 
   const out = createWriteStream(filePath);
 
   pipeline(opusStream, oggStream, out, (err) => {
-    // Remove from active recordings when done
-    activeRecordings.delete(user.id);
+    // Set user back to idle when recording completes
+    userRecordingStates.set(user.id, RecordingState.IDLE);
     
     if (err) {
-      console.warn(`❌ Error recording file ${filename} - ${err.message}`);
+      console.warn(`${LOG_PREFIXES.ERROR} Error recording file ${filename} - ${err.message}`);
     } else {
-      console.log(`✅ Recorded ${filename}`);
+      console.log(`${LOG_PREFIXES.SUCCESS} Recorded ${filename}`);
     }
   });
 }
@@ -161,8 +176,11 @@ export function createListeningStream(receiver: VoiceReceiver, user: any, sessio
 export function stopRecordingSession(session: RecordingSession): void {
   console.log(`🛑 Stopping recording session in guild ${session.guildId}`);
   
-  // Remove voice state update listeners to prevent memory leaks
-  session.client.removeAllListeners('voiceStateUpdate');
+  // Remove only our specific voice state update listener to prevent memory leaks
+  if (session.voiceStateListener) {
+    session.client.removeListener('voiceStateUpdate', session.voiceStateListener);
+    delete session.voiceStateListener;
+  }
   
   // Destroy voice connection (this will trigger stateChange cleanup)
   session.connection.destroy();

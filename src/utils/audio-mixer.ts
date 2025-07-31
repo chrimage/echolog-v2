@@ -13,7 +13,7 @@ export async function mixSessionFolder(folderPath: string): Promise<string> {
   console.log(`🎵 Starting timeline mixing for session: ${path.basename(folderPath)}`);
   
   // Find all OGG files in the session folder
-  const files = fs.readdirSync(folderPath)
+  const files = (await fs.promises.readdir(folderPath))
     .filter(file => file.endsWith('.ogg'))
     .filter(file => !file.startsWith('mixed_')); // Avoid mixing our own output
   
@@ -25,7 +25,7 @@ export async function mixSessionFolder(folderPath: string): Promise<string> {
     console.log(`📄 Only one clip found, copying as mixed output`);
     const singleFile = files[0];
     const outputPath = path.join(folderPath, 'mixed_timeline.ogg');
-    fs.copyFileSync(path.join(folderPath, singleFile), outputPath);
+    await fs.promises.copyFile(path.join(folderPath, singleFile), outputPath);
     return outputPath;
   }
   

@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { NonRealTimeVAD } from 'avr-vad';
 import ffmpeg from 'fluent-ffmpeg';
 
 export interface TranscriptionSegment {
@@ -48,23 +47,17 @@ export async function transcribeSessionFolder(folderPath: string): Promise<strin
         sessionStart = timestamp;
       }
       
-      // Pre-filter with VAD to detect speech segments
-      const speechSegments = await detectSpeechSegments(filePath);
-      
-      if (speechSegments.length === 0) {
-        console.log(`⚠️ No speech detected in ${filename}, skipping transcription`);
-        continue;
-      }
-      
-      console.log(`🎤 Detected ${speechSegments.length} speech segments in ${filename}`);
+      // Skip VAD - rely on Whisper's built-in speech detection
       
       const transcription = await transcribeAudioFile(filePath);
       
       // Process segments from this file
       if (transcription.segments && transcription.segments.length > 0) {
         for (const segment of transcription.segments) {
-          // Filter out segments with high no_speech_prob
-          if (segment.no_speech_prob <= 0.5) {
+          // Enhanced filtering without VAD
+          if (segment.no_speech_prob <= 0.3 && 
+              segment.text.trim().length > 3 && 
+              segment.end - segment.start > 0.5) {
             // Calculate absolute timestamp by adding file timestamp offset
             const fileOffsetMs = timestamp.getTime() - sessionStart!.getTime();
             const absoluteStartTime = (fileOffsetMs / 1000) + segment.start;
@@ -135,7 +128,7 @@ async function transcribeAudioFile(filePath: string): Promise<any> {
   const blob = new Blob([fileBuffer], { type: 'audio/ogg' });
   
   formData.append('file', blob, path.basename(filePath));
-  formData.append('model', 'whisper-large-v3-turbo');
+  formData.append('model', 'whisper-large-v3');
   formData.append('response_format', 'verbose_json');
   formData.append('temperature', '0');
   
@@ -200,95 +193,11 @@ function generateMarkdownTranscript(result: TranscriptionResult, sessionFolderNa
   
   markdown += `---\n\n`;
   markdown += `*Transcript generated automatically using Groq Whisper API*\n`;
-  markdown += `*Segments with >50% no-speech probability were filtered out*\n`;
+  markdown += `*Segments with >30% no-speech probability were filtered out*\n`;
   
   return markdown;
 }
 
-async function detectSpeechSegments(oggPath: string): Promise<Array<{start: number, end: number}>> {
-  // Convert OGG to WAV for VAD processing (VAD needs 16kHz mono PCM)
-  const wavPath = await convertOggToWav(oggPath);
-  
-  try {
-    console.log(`🔍 Running VAD on ${path.basename(oggPath)}...`);
-    
-    // Initialize Silero VAD with higher thresholds to avoid Discord sounds
-    const vad = await NonRealTimeVAD.new({
-      positiveSpeechThreshold: 0.6,
-      negativeSpeechThreshold: 0.4
-    });
-    
-    // Load WAV file as Float32Array (required format for VAD)
-    const audioData = await loadWavAsFloat32Array(wavPath);
-    
-    // Process audio and collect speech segments
-    const speechSegments: Array<{start: number, end: number}> = [];
-    
-    for await (const speechData of vad.run(audioData, 16000)) {
-      speechSegments.push({
-        start: speechData.start,
-        end: speechData.end
-      });
-    }
-    
-    console.log(`🎯 VAD found ${speechSegments.length} speech segments`);
-    
-    return speechSegments;
-    
-  } catch (error) {
-    console.warn(`⚠️ VAD failed for ${path.basename(oggPath)}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    // If VAD fails, assume the whole file contains speech (fallback)
-    return [{ start: 0, end: 10000 }]; // Assume 10 second max clip (in milliseconds)
-  } finally {
-    // Clean up temporary WAV file
-    try {
-      fs.unlinkSync(wavPath);
-    } catch (cleanupError) {
-      console.warn(`⚠️ Failed to cleanup VAD temp file ${wavPath}`);
-    }
-  }
-}
-
-async function convertOggToWav(oggPath: string): Promise<string> {
-  const wavPath = oggPath.replace('.ogg', '_vad_temp.wav');
-  
-  return new Promise((resolve, reject) => {
-    ffmpeg(oggPath)
-      .audioCodec('pcm_s16le')
-      .audioChannels(1) // Mono for VAD
-      .audioFrequency(16000) // 16kHz for VAD processing
-      .output(wavPath)
-      .on('start', () => {
-        console.log(`🔄 Converting ${path.basename(oggPath)} for VAD...`);
-      })
-      .on('end', () => {
-        resolve(wavPath);
-      })
-      .on('error', (err: Error) => {
-        console.error(`❌ VAD conversion error: ${err.message}`);
-        reject(new Error(`VAD audio conversion failed: ${err.message}`));
-      })
-      .run();
-  });
-}
-
-async function loadWavAsFloat32Array(wavPath: string): Promise<Float32Array> {
-  const buffer = fs.readFileSync(wavPath);
-  
-  // Simple WAV parser - skip 44-byte header and read PCM data
-  // This assumes 16-bit PCM mono at 16kHz (our converted format)
-  const headerSize = 44;
-  const pcmData = buffer.subarray(headerSize);
-  
-  // Convert 16-bit signed integers to Float32Array (-1.0 to 1.0)
-  const samples = new Float32Array(pcmData.length / 2);
-  for (let i = 0; i < samples.length; i++) {
-    const sample = pcmData.readInt16LE(i * 2);
-    samples[i] = sample / 32768.0; // Convert to -1.0 to 1.0 range
-  }
-  
-  return samples;
-}
 
 function formatTimestamp(seconds: number): string {
   const minutes = Math.floor(seconds / 60);

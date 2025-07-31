@@ -3,6 +3,7 @@ import { VoiceRecordingState } from '../types/recording';
 import { stopRecordingSession } from '../utils/recording';
 import { mixSessionFolder } from '../utils/audio-mixer';
 import { transcribeSessionFolder } from '../utils/transcription';
+import { ERROR_MESSAGES, SUCCESS_MESSAGES, LOG_PREFIXES, FILESYSTEM } from '../config/constants';
 import * as fs from 'fs';
 
 export async function handleStopCommand(
@@ -15,17 +16,14 @@ export async function handleStopCommand(
   try {
     // Check if user is in a guild
     if (!interaction.inGuild()) {
-      await interaction.editReply('❌ This command can only be used in a server!');
+      await interaction.editReply(`${LOG_PREFIXES.ERROR} ${ERROR_MESSAGES.GUILD_ONLY_COMMAND}`);
       return;
     }
     
     // Check if we have an active recording session
     const session = recordingState.activeSessions.get(interaction.guildId!);
     if (!session) {
-      await interaction.editReply(
-        '❌ **No active recording session!**\n\n' +
-        'Use `/join` while in a voice channel to start recording.'
-      );
+      await interaction.editReply(`${LOG_PREFIXES.ERROR} ${ERROR_MESSAGES.NO_ACTIVE_SESSION}`);
       return;
     }
     
@@ -40,8 +38,9 @@ export async function handleStopCommand(
     const folderName = session.folderPath.split('/').pop() || 'Unknown';
     
     // Count actual recorded clips
-    const recordedClips = fs.readdirSync(session.folderPath)
-      .filter(file => file.endsWith('.ogg') && !file.startsWith('mixed_'))
+    const files = await fs.promises.readdir(session.folderPath);
+    const recordedClips = files
+      .filter(file => file.endsWith(FILESYSTEM.AUDIO_EXTENSION) && !file.startsWith('mixed_'))
       .length;
     
     // Stop the recording session
@@ -77,30 +76,30 @@ export async function handleStopCommand(
     const endTimestamp = Math.floor(new Date().getTime() / 1000);
     
     // Build success message with mixing and transcription status
-    let message = `✅ **Recording stopped!**\n\n` +
+    let message = `${LOG_PREFIXES.SUCCESS} **${SUCCESS_MESSAGES.RECORDING_STOPPED}**\n\n` +
       `📊 **Session Summary:**\n` +
       `⏰ **Duration:** ${durationMinutes}m ${durationSeconds}s\n` +
-      `🎙️ **Clips recorded:** ${recordedClips}\n` +
-      `📁 **Saved to:** \`${folderName}\`\n\n` +
+      `${LOG_PREFIXES.RECORDING} **Clips recorded:** ${recordedClips}\n` +
+      `${LOG_PREFIXES.FOLDER} **Saved to:** \`${folderName}\`\n\n` +
       `📍 **Timeline:**\n` +
       `🟢 Started: <t:${startTimestamp}:T>\n` +
       `🔴 Ended: <t:${endTimestamp}:T>\n\n`;
     
     // Add mixing status
     if (mixedFilePath) {
-      message += `🎵 **Mixed timeline created:** \`mixed_timeline.ogg\`\n`;
+      message += `${LOG_PREFIXES.AUDIO} **Mixed timeline created:** \`${FILESYSTEM.MIXED_TIMELINE_FILENAME}\`\n`;
     } else {
-      message += `⚠️ **Timeline mixing failed** - individual clips are available.\n`;
+      message += `${LOG_PREFIXES.WARNING} **Timeline mixing failed** - individual clips are available.\n`;
     }
     
     // Add transcription status
     if (transcriptPath) {
-      message += `📝 **Transcript created:** \`transcript.md\`\n`;
+      message += `${LOG_PREFIXES.TRANSCRIPT} **Transcript created:** \`${FILESYSTEM.TRANSCRIPT_FILENAME}\`\n`;
     } else {
-      message += `⚠️ **Transcription failed** - audio files are still available.\n`;
+      message += `${LOG_PREFIXES.WARNING} **Transcription failed** - audio files are still available.\n`;
     }
     
-    message += `\n🔍 Check the \`recordings/${folderName}\` folder for all files.`;
+    message += `\n🔍 Check the \`${FILESYSTEM.RECORDINGS_DIR}/${folderName}\` folder for all files.`;
     
     await interaction.editReply(message);
     
@@ -124,17 +123,15 @@ export async function handleStopCommand(
       try {
         session.connection.destroy();
         recordingState.activeSessions.delete(interaction.guildId!);
-        console.log(`🧹 Emergency cleanup completed for guild ${interaction.guildId}`);
+        console.log(`${LOG_PREFIXES.CLEANUP} Emergency cleanup completed for guild ${interaction.guildId}`);
       } catch (cleanupError) {
         console.error('Error during emergency cleanup:', cleanupError);
       }
     }
     
     await interaction.editReply(
-      `❌ **Error stopping recording!**\n\n` +
-      `**Error:** ${error instanceof Error ? error.message : 'Unknown error'}\n\n` +
-      `The bot has been disconnected, but some recordings may have been saved.\n` +
-      `Check the \`recordings\` folder for any available files.`
+      `${LOG_PREFIXES.ERROR} Error stopping recording: ${error instanceof Error ? error.message : 'Unknown error'}\n` +
+      `The bot has been disconnected. Check the \`${FILESYSTEM.RECORDINGS_DIR}\` folder for saved files.`
     );
   }
 }

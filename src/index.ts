@@ -1,6 +1,9 @@
 import { Client, GatewayIntentBits, Events, PermissionsBitField, OAuth2Scopes } from 'discord.js';
 import { VoiceRecordingState } from './types/recording';
 import { deployCommands } from './deploy-commands';
+import { handleJoinCommand } from './commands/join';
+import { handleStopCommand } from './commands/stop';
+import { DISCORD, FILESYSTEM, ERROR_MESSAGES, LOG_PREFIXES } from './config/constants';
 import * as dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
@@ -22,14 +25,14 @@ const client = new Client({
 });
 
 // Ensure recordings directory exists
-const recordingsDir = path.join(process.cwd(), 'recordings');
+const recordingsDir = path.join(process.cwd(), FILESYSTEM.RECORDINGS_DIR);
 if (!fs.existsSync(recordingsDir)) {
   fs.mkdirSync(recordingsDir, { recursive: true });
 }
 
 // Bot ready event
 client.once(Events.ClientReady, async (readyClient) => {
-  console.log(`✅ Logged in as ${readyClient.user.tag}!`);
+  console.log(`${LOG_PREFIXES.SUCCESS} Logged in as ${readyClient.user.tag}!`);
   console.log(`🤖 Bot ID: ${readyClient.user.id}`);
   
   // Deploy slash commands automatically
@@ -67,25 +70,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
   try {
     switch (commandName) {
       case 'join':
-        const { handleJoinCommand } = await import('./commands/join');
         await handleJoinCommand(interaction, recordingState);
         break;
       
       case 'stop':
-        const { handleStopCommand } = await import('./commands/stop');
         await handleStopCommand(interaction, recordingState);
         break;
       
       default:
         await interaction.reply({ 
-          content: '❌ Unknown command!', 
+          content: `${LOG_PREFIXES.ERROR} Unknown command!`, 
           ephemeral: true 
         });
     }
   } catch (error) {
     console.error(`Error executing command ${commandName}:`, error);
     
-    const errorMessage = '❌ There was an error executing this command!';
+    const errorMessage = `${LOG_PREFIXES.ERROR} There was an error executing this command!`;
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp({ content: errorMessage, ephemeral: true });
     } else {
@@ -130,11 +131,11 @@ process.on('SIGINT', async () => {
 // Validate environment and login
 const token = process.env.DISCORD_TOKEN;
 if (!token) {
-  console.error('❌ DISCORD_TOKEN is required in .env file!');
+  console.error(`${LOG_PREFIXES.ERROR} ${ERROR_MESSAGES.DISCORD_TOKEN_MISSING}`);
   process.exit(1);
 }
 
 client.login(token).catch((error) => {
-  console.error('❌ Failed to login:', error);
+  console.error(`${LOG_PREFIXES.ERROR} Failed to login:`, error);
   process.exit(1);
 });
