@@ -33,7 +33,7 @@ export const TRANSCRIPTION = {
   /** Temperature setting for transcription (0 = more deterministic) */
   TEMPERATURE: 0,
   /** Maximum no-speech probability to include segments */
-  MAX_NO_SPEECH_PROB: 0.5,
+  MAX_NO_SPEECH_PROB: 0.3,
   /** Groq API endpoint */
   API_ENDPOINT: 'https://api.groq.com/openai/v1/audio/transcriptions',
 } as const;

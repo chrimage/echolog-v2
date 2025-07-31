@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
+import { TRANSCRIPTION, FILESYSTEM } from '../config/constants';
 
 export interface TranscriptionSegment {
   speaker: string;
@@ -22,7 +23,7 @@ export async function transcribeSessionFolder(folderPath: string): Promise<strin
   
   // Find all OGG files in the session folder
   const files = fs.readdirSync(folderPath)
-    .filter(file => file.endsWith('.ogg'))
+    .filter(file => file.endsWith(FILESYSTEM.AUDIO_EXTENSION))
     .filter(file => !file.startsWith('mixed_')); // Avoid transcribing mixed output
   
   if (files.length === 0) {
@@ -55,7 +56,7 @@ export async function transcribeSessionFolder(folderPath: string): Promise<strin
       if (transcription.segments && transcription.segments.length > 0) {
         for (const segment of transcription.segments) {
           // Enhanced filtering without VAD
-          if (segment.no_speech_prob <= 0.3 && 
+          if (segment.no_speech_prob <= TRANSCRIPTION.MAX_NO_SPEECH_PROB && 
               segment.text.trim().length > 3 && 
               segment.end - segment.start > 0.5) {
             // Calculate absolute timestamp by adding file timestamp offset
@@ -95,7 +96,7 @@ export async function transcribeSessionFolder(folderPath: string): Promise<strin
   const sessionDuration = sessionEnd.getTime() - sessionStart!.getTime();
   
   // Generate markdown transcript
-  const transcriptPath = path.join(folderPath, 'transcript.md');
+  const transcriptPath = path.join(folderPath, FILESYSTEM.TRANSCRIPT_FILENAME);
   const transcriptContent = generateMarkdownTranscript({
     segments: allSegments,
     sessionStart: sessionStart!,
@@ -116,10 +117,10 @@ async function transcribeAudioFile(filePath: string): Promise<any> {
     throw new Error('GROQ_API_KEY environment variable is required');
   }
   
-  // Check file size (25MB limit for free tier)
+  // Check file size (Groq API limit)
   const stats = fs.statSync(filePath);
   const fileSizeMB = stats.size / (1024 * 1024);
-  if (fileSizeMB > 25) {
+  if (fileSizeMB > TRANSCRIPTION.MAX_FILE_SIZE_MB) {
     console.warn(`⚠️ File ${path.basename(filePath)} is ${fileSizeMB.toFixed(1)}MB, may exceed API limits`);
   }
   
@@ -128,11 +129,11 @@ async function transcribeAudioFile(filePath: string): Promise<any> {
   const blob = new Blob([fileBuffer], { type: 'audio/ogg' });
   
   formData.append('file', blob, path.basename(filePath));
-  formData.append('model', 'whisper-large-v3');
+  formData.append('model', TRANSCRIPTION.WHISPER_MODEL);
   formData.append('response_format', 'verbose_json');
-  formData.append('temperature', '0');
+  formData.append('temperature', TRANSCRIPTION.TEMPERATURE.toString());
   
-  const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+  const response = await fetch(TRANSCRIPTION.API_ENDPOINT, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
@@ -193,7 +194,7 @@ function generateMarkdownTranscript(result: TranscriptionResult, sessionFolderNa
   
   markdown += `---\n\n`;
   markdown += `*Transcript generated automatically using Groq Whisper API*\n`;
-  markdown += `*Segments with >30% no-speech probability were filtered out*\n`;
+  markdown += `*Segments with >${Math.round(TRANSCRIPTION.MAX_NO_SPEECH_PROB * 100)}% no-speech probability were filtered out*\n`;
   
   return markdown;
 }

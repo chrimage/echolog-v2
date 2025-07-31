@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
+import { FILESYSTEM } from '../config/constants';
 
 export interface ClipTimelineData {
   filename: string;
@@ -14,7 +15,7 @@ export async function mixSessionFolder(folderPath: string): Promise<string> {
   
   // Find all OGG files in the session folder
   const files = (await fs.promises.readdir(folderPath))
-    .filter(file => file.endsWith('.ogg'))
+    .filter(file => file.endsWith(FILESYSTEM.AUDIO_EXTENSION))
     .filter(file => !file.startsWith('mixed_')); // Avoid mixing our own output
   
   if (files.length === 0) {
@@ -24,7 +25,7 @@ export async function mixSessionFolder(folderPath: string): Promise<string> {
   if (files.length === 1) {
     console.log(`📄 Only one clip found, copying as mixed output`);
     const singleFile = files[0];
-    const outputPath = path.join(folderPath, 'mixed_timeline.ogg');
+    const outputPath = path.join(folderPath, FILESYSTEM.MIXED_TIMELINE_FILENAME);
     await fs.promises.copyFile(path.join(folderPath, singleFile), outputPath);
     return outputPath;
   }
