@@ -32,6 +32,10 @@ Edit `.env` file:
 ```bash
 # Change from localhost to your actual domain
 DOMAIN=your-domain.com
+
+# Set user/group IDs to match your host user (run: id -u && id -g)
+USER_ID=1001
+GROUP_ID=1001
 ```
 
 ### 2. DNS Configuration

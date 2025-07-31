@@ -29,7 +29,13 @@ RUN npm run build
 RUN npm prune --production
 
 # Create recordings directory with proper permissions
-RUN mkdir -p recordings && chown -R node:node recordings
+RUN mkdir -p recordings
+
+# Create user with host UID/GID for proper bind mount permissions
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+RUN groupmod -g $GROUP_ID node && usermod -u $USER_ID node
+RUN chown -R node:node recordings
 
 # Switch to node user for security
 USER node

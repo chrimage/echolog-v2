@@ -1,6 +1,10 @@
 services:
   echolog-v2:
-    build: .
+    build: 
+      context: .
+      args:
+        USER_ID: ${USER_ID:-1000}
+        GROUP_ID: ${GROUP_ID:-1000}
     container_name: echolog-v2
     restart: unless-stopped
     # Remove direct port exposure - only accessible via Caddy
