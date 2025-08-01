@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 
 interface AudioPlayerProps {
-  sessionId: string
+  viewerToken: string
 }
 
-export default function AudioPlayer({ sessionId }: AudioPlayerProps) {
+export default function AudioPlayer({ viewerToken }: AudioPlayerProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [duration, setDuration] = useState<number>(0)
@@ -12,7 +12,7 @@ export default function AudioPlayer({ sessionId }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const audioRef = useRef<HTMLAudioElement>(null)
 
-  const audioUrl = `/api/artifact/${sessionId}/audio`
+  const audioUrl = `/api/viewer/${viewerToken}/artifact/audio`
 
   useEffect(() => {
     const audio = audioRef.current

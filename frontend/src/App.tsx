@@ -4,22 +4,25 @@ import SessionViewer from './components/SessionViewer'
 
 function App() {
   const [sessionData, setSessionData] = useState<SessionData | null>(null)
+  const [viewerToken, setViewerToken] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     // Extract viewer token from URL path (/viewer/{token})
     const pathParts = window.location.pathname.split('/')
-    const viewerToken = pathParts[pathParts.length - 1]
+    const token = pathParts[pathParts.length - 1]
     
-    if (!viewerToken || pathParts[pathParts.length - 2] !== 'viewer') {
+    if (!token || pathParts[pathParts.length - 2] !== 'viewer') {
       setError('Invalid viewer URL')
       setLoading(false)
       return
     }
 
+    setViewerToken(token)
+
     // Fetch session data using viewer token
-    fetch(`/api/viewer/${viewerToken}`)
+    fetch(`/api/viewer/${token}`)
       .then(res => {
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}: ${res.statusText}`)
@@ -55,7 +58,7 @@ function App() {
     )
   }
 
-  if (!sessionData) {
+  if (!sessionData || !viewerToken) {
     return (
       <div className="container">
         <div className="error">
@@ -68,7 +71,7 @@ function App() {
 
   return (
     <div className="container">
-      <SessionViewer sessionData={sessionData} />
+      <SessionViewer sessionData={sessionData} viewerToken={viewerToken} />
     </div>
   )
 }

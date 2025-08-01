@@ -3,19 +3,19 @@ import ReactMarkdown from 'react-markdown'
 import { ArtifactResponse } from '../types'
 
 interface MarkdownViewerProps {
-  sessionId: string
+  viewerToken: string
   type: 'transcript' | 'summary'
   title: string
 }
 
-export default function MarkdownViewer({ sessionId, type, title }: MarkdownViewerProps) {
+export default function MarkdownViewer({ viewerToken, type, title }: MarkdownViewerProps) {
   const [content, setContent] = useState<string>('')
   const [downloadUrl, setDownloadUrl] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch(`/api/artifact/${sessionId}/${type}`)
+    fetch(`/api/viewer/${viewerToken}/artifact/${type}`)
       .then(res => {
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}: ${res.statusText}`)
@@ -31,7 +31,7 @@ export default function MarkdownViewer({ sessionId, type, title }: MarkdownViewe
         setError(err.message)
         setLoading(false)
       })
-  }, [sessionId, type])
+  }, [viewerToken, type])
 
   const handleDownload = () => {
     if (downloadUrl) {

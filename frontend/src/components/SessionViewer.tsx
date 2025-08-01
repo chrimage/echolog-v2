@@ -6,9 +6,10 @@ import ThemeToggle from './ThemeToggle'
 
 interface SessionViewerProps {
   sessionData: SessionData
+  viewerToken: string
 }
 
-export default function SessionViewer({ sessionData }: SessionViewerProps) {
+export default function SessionViewer({ sessionData, viewerToken }: SessionViewerProps) {
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     // Auto-select first available tab
     if (sessionData.files.mixedTimeline) return 'audio'
@@ -68,18 +69,18 @@ export default function SessionViewer({ sessionData }: SessionViewerProps) {
 
           <div className="tab-content">
             {activeTab === 'audio' && sessionData.files.mixedTimeline && (
-              <AudioPlayer sessionId={sessionData.sessionId} />
+              <AudioPlayer viewerToken={viewerToken} />
             )}
             {activeTab === 'transcript' && sessionData.files.transcript && (
               <MarkdownViewer 
-                sessionId={sessionData.sessionId} 
+                viewerToken={viewerToken} 
                 type="transcript" 
                 title="📝 Session Transcript"
               />
             )}
             {activeTab === 'summary' && sessionData.files.summary && (
               <MarkdownViewer 
-                sessionId={sessionData.sessionId} 
+                viewerToken={viewerToken} 
                 type="summary" 
                 title="📄 Session Summary"
               />

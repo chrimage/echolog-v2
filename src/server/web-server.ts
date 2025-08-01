@@ -111,6 +111,10 @@ export class WebServer {
       this.handleArtifactAPI(req, res);
     });
 
+    this.app.get('/api/viewer/:viewerToken/artifact/:type', (req: Request, res: Response) => {
+      this.handleViewerArtifactAPI(req, res);
+    });
+
     // Session overview endpoint (legacy)
     this.app.get('/session/:sessionId', (req: Request, res: Response) => {
       this.handleSessionOverview(req, res);
@@ -401,6 +405,108 @@ export class WebServer {
         res.status(404).json({ error: 'Session not found' });
       } else {
         console.error(`${LOG_PREFIXES.ERROR} Session API error:`, error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    }
+  }
+
+  private async handleViewerArtifactAPI(req: Request, res: Response): Promise<void> {
+    const { viewerToken, type } = req.params;
+    
+    if (!viewerToken || !type) {
+      res.status(400).json({ error: 'Missing viewer token or artifact type' });
+      return;
+    }
+
+    // Validate token format
+    if (!validateToken(viewerToken)) {
+      res.status(400).json({ error: 'Invalid token format' });
+      return;
+    }
+
+    if (!validateArtifactType(type)) {
+      res.status(400).json({ error: 'Invalid artifact type' });
+      return;
+    }
+
+    const tokenData = this.viewerTokens.get(viewerToken);
+    if (!tokenData) {
+      res.status(404).json({ error: 'Invalid or expired viewer token' });
+      return;
+    }
+
+    if (new Date() > tokenData.expiresAt) {
+      this.viewerTokens.delete(viewerToken);
+      res.status(410).json({ error: 'Viewer token expired' });
+      return;
+    }
+
+    // Use the session folder name from the token
+    const sessionId = tokenData.sessionFolderName;
+    const sessionPath = path.join(process.cwd(), FILESYSTEM.RECORDINGS_DIR, sessionId);
+    
+    let filename: string;
+    let contentType: string;
+    
+    switch (type) {
+      case 'transcript':
+        filename = FILESYSTEM.TRANSCRIPT_FILENAME;
+        contentType = 'text/markdown';
+        break;
+      case 'summary':
+        filename = FILESYSTEM.SUMMARY_FILENAME;
+        contentType = 'text/markdown';
+        break;
+      case 'audio':
+        filename = FILESYSTEM.MIXED_TIMELINE_FILENAME;
+        contentType = 'audio/ogg';
+        break;
+    }
+
+    const filePath = path.join(sessionPath, filename);
+    
+    try {
+      // Check if file exists
+      await fs.access(filePath);
+
+      if (type === 'audio') {
+        // For audio, stream the file directly with proper error handling
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Accept-Ranges', 'bytes');
+        
+        const fileStream = fsSync.createReadStream(filePath);
+        
+        // Handle stream errors
+        fileStream.on('error', (error) => {
+          console.error(`${LOG_PREFIXES.ERROR} Error streaming audio:`, error);
+          if (!res.headersSent) {
+            res.status(500).json({ error: 'Error streaming audio' });
+          }
+        });
+
+        // Handle client disconnect
+        req.on('aborted', () => {
+          fileStream.destroy();
+        });
+
+        fileStream.pipe(res);
+      } else {
+        // For text files, return content and download URL
+        const content = await fs.readFile(filePath, 'utf-8');
+        const downloadToken = this.generateDownloadToken(filePath, sessionId, 48);
+        const downloadUrl = this.generateDownloadUrl(downloadToken, filename);
+        
+        res.json({
+          content,
+          downloadUrl
+        });
+      }
+
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        res.status(404).json({ error: 'Artifact not found' });
+      } else {
+        console.error(`${LOG_PREFIXES.ERROR} Viewer Artifact API error:`, error);
         res.status(500).json({ error: 'Internal server error' });
       }
     }
