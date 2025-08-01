@@ -8,18 +8,18 @@ function App() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // Extract session ID from URL path
+    // Extract viewer token from URL path (/viewer/{token})
     const pathParts = window.location.pathname.split('/')
-    const sessionId = pathParts[pathParts.length - 1]
+    const viewerToken = pathParts[pathParts.length - 1]
     
-    if (!sessionId) {
-      setError('No session ID provided in URL')
+    if (!viewerToken || pathParts[pathParts.length - 2] !== 'viewer') {
+      setError('Invalid viewer URL')
       setLoading(false)
       return
     }
 
-    // Fetch session data
-    fetch(`/api/session/${sessionId}`)
+    // Fetch session data using viewer token
+    fetch(`/api/viewer/${viewerToken}`)
       .then(res => {
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}: ${res.statusText}`)

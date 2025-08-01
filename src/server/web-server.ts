@@ -103,6 +103,10 @@ export class WebServer {
       this.handleSessionAPI(req, res);
     });
 
+    this.app.get('/api/viewer/:viewerToken', (req: Request, res: Response) => {
+      this.handleViewerSessionAPI(req, res);
+    });
+
     this.app.get('/api/artifact/:sessionId/:type', (req: Request, res: Response) => {
       this.handleArtifactAPI(req, res);
     });
@@ -275,6 +279,75 @@ export class WebServer {
 
     // Serve the React app
     res.sendFile(path.join(process.cwd(), 'dist/public/index.html'));
+  }
+
+  private async handleViewerSessionAPI(req: Request, res: Response): Promise<void> {
+    const { viewerToken } = req.params;
+    
+    if (!viewerToken) {
+      res.status(400).json({ error: 'Missing viewer token' });
+      return;
+    }
+
+    // Validate token format
+    if (!validateToken(viewerToken)) {
+      res.status(400).json({ error: 'Invalid token format' });
+      return;
+    }
+
+    const tokenData = this.viewerTokens.get(viewerToken);
+    if (!tokenData) {
+      res.status(404).json({ error: 'Invalid or expired viewer token' });
+      return;
+    }
+
+    if (new Date() > tokenData.expiresAt) {
+      this.viewerTokens.delete(viewerToken);
+      res.status(410).json({ error: 'Viewer token expired' });
+      return;
+    }
+
+    // Use the session folder name from the token to get session data
+    const sessionId = tokenData.sessionFolderName;
+    const sessionPath = path.join(process.cwd(), FILESYSTEM.RECORDINGS_DIR, sessionId);
+    
+    try {
+      // Check if session directory exists
+      const stats = await fs.stat(sessionPath);
+      if (!stats.isDirectory()) {
+        res.status(404).json({ error: 'Session not found' });
+        return;
+      }
+
+      // Read directory contents asynchronously
+      const files = await fs.readdir(sessionPath);
+      const sessionFiles = {
+        mixedTimeline: files.includes(FILESYSTEM.MIXED_TIMELINE_FILENAME),
+        transcript: files.includes(FILESYSTEM.TRANSCRIPT_FILENAME),
+        summary: files.includes(FILESYSTEM.SUMMARY_FILENAME),
+        audioClips: files.filter(f => f.endsWith(FILESYSTEM.AUDIO_EXTENSION) && !f.startsWith('mixed_')).length
+      };
+
+      const sessionData = {
+        sessionId,
+        sessionName: sessionId, // Use folder name as session name
+        startTime: stats.birthtime.toISOString(),
+        endTime: stats.mtime.toISOString(),
+        duration: this.formatDuration(stats.mtime.getTime() - stats.birthtime.getTime()),
+        participantCount: sessionFiles.audioClips, // Rough estimate
+        files: sessionFiles
+      };
+
+      res.json(sessionData);
+
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        res.status(404).json({ error: 'Session not found' });
+      } else {
+        console.error(`${LOG_PREFIXES.ERROR} Viewer Session API error:`, error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    }
   }
 
   private async handleSessionAPI(req: Request, res: Response): Promise<void> {
