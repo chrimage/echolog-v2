@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { SessionData, TabType } from './types'
+import { SessionData } from './types'
 import SessionViewer from './components/SessionViewer'
 
 function App() {
