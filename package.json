@@ -5,7 +5,8 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node src/index.ts",
-    "build": "tsc",
+    "build": "tsc && npm run build:frontend",
+    "build:frontend": "cd frontend && npm run build",
     "start": "node dist/index.js",
     "lint": "tsc --noEmit",
     "deploy": "ts-node src/deploy-commands.ts"

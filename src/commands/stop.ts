@@ -102,39 +102,56 @@ export async function handleStopCommand(
       message += `${LOG_PREFIXES.WARNING} **Transcription failed** - audio files are still available.\n`;
     }
 
-    // Generate download links for available files
-    const downloadLinks: string[] = [];
+    // Generate viewer link if any artifacts are available
     try {
-      // Check which files exist and generate tokens for them
-      if (mixedFilePath && fs.existsSync(mixedFilePath)) {
-        const token = webServer.generateDownloadToken(mixedFilePath, folderName, WEB_SERVER.TOKEN_EXPIRY_HOURS);
-        const downloadUrl = webServer.generateDownloadUrl(token, FILESYSTEM.MIXED_TIMELINE_FILENAME);
-        downloadLinks.push(`🎵 **Mixed Audio:** [${FILESYSTEM.MIXED_TIMELINE_FILENAME}](${downloadUrl})`);
-      }
-
-      if (transcriptPath && fs.existsSync(transcriptPath)) {
-        const token = webServer.generateDownloadToken(transcriptPath, folderName, WEB_SERVER.TOKEN_EXPIRY_HOURS);
-        const downloadUrl = webServer.generateDownloadUrl(token, FILESYSTEM.TRANSCRIPT_FILENAME);
-        downloadLinks.push(`📝 **Transcript:** [${FILESYSTEM.TRANSCRIPT_FILENAME}](${downloadUrl})`);
-      }
-
-      // Check for summary file
+      // Check if we have any artifacts to view
       const summaryPath = path.join(session.folderPath, FILESYSTEM.SUMMARY_FILENAME);
-      if (fs.existsSync(summaryPath)) {
-        const token = webServer.generateDownloadToken(summaryPath, folderName, WEB_SERVER.TOKEN_EXPIRY_HOURS);
-        const downloadUrl = webServer.generateDownloadUrl(token, FILESYSTEM.SUMMARY_FILENAME);
-        downloadLinks.push(`📄 **Summary:** [${FILESYSTEM.SUMMARY_FILENAME}](${downloadUrl})`);
-      }
+      const hasAnyArtifacts = 
+        (mixedFilePath && fs.existsSync(mixedFilePath)) ||
+        (transcriptPath && fs.existsSync(transcriptPath)) ||
+        fs.existsSync(summaryPath);
 
-      if (downloadLinks.length > 0) {
-        message += `\n\n📥 **Download Links:**\n${downloadLinks.join('\n')}\n`;
-        message += `⏰ *Links expire in ${WEB_SERVER.TOKEN_EXPIRY_HOURS} hours*`;
-        console.log(`${LOG_PREFIXES.SUCCESS} ${SUCCESS_MESSAGES.DOWNLOAD_LINKS_GENERATED} for session: ${folderName}`);
+      if (hasAnyArtifacts) {
+        // Generate viewer token for 48 hours
+        const viewerToken = webServer.generateViewerToken(folderName, 48);
+        const viewerUrl = webServer.generateViewerUrl(viewerToken);
+        
+        message += `\n\n🌐 **View Session:**\n`;
+        message += `[**Open Session Viewer**](${viewerUrl})\n`;
+        message += `*Interactive viewer with audio player, transcript, and summary*\n`;
+        message += `⏰ *Viewer link expires in 48 hours*\n\n`;
+
+        // Also provide individual download links as backup
+        const downloadLinks: string[] = [];
+        if (mixedFilePath && fs.existsSync(mixedFilePath)) {
+          const token = webServer.generateDownloadToken(mixedFilePath, folderName, WEB_SERVER.TOKEN_EXPIRY_HOURS);
+          const downloadUrl = webServer.generateDownloadUrl(token, FILESYSTEM.MIXED_TIMELINE_FILENAME);
+          downloadLinks.push(`🎵 [Audio](${downloadUrl})`);
+        }
+
+        if (transcriptPath && fs.existsSync(transcriptPath)) {
+          const token = webServer.generateDownloadToken(transcriptPath, folderName, WEB_SERVER.TOKEN_EXPIRY_HOURS);
+          const downloadUrl = webServer.generateDownloadUrl(token, FILESYSTEM.TRANSCRIPT_FILENAME);
+          downloadLinks.push(`📝 [Transcript](${downloadUrl})`);
+        }
+
+        if (fs.existsSync(summaryPath)) {
+          const token = webServer.generateDownloadToken(summaryPath, folderName, WEB_SERVER.TOKEN_EXPIRY_HOURS);
+          const downloadUrl = webServer.generateDownloadUrl(token, FILESYSTEM.SUMMARY_FILENAME);
+          downloadLinks.push(`📄 [Summary](${downloadUrl})`);
+        }
+
+        if (downloadLinks.length > 0) {
+          message += `📥 **Direct Downloads:** ${downloadLinks.join(' • ')}\n`;
+          message += `⏰ *Download links expire in ${WEB_SERVER.TOKEN_EXPIRY_HOURS} hours*`;
+        }
+
+        console.log(`${LOG_PREFIXES.SUCCESS} Generated viewer link for session: ${folderName}`);
       } else {
         message += `\n🔍 Check the \`${FILESYSTEM.RECORDINGS_DIR}/${folderName}\` folder for all files.`;
       }
     } catch (linkError) {
-      console.warn(`${LOG_PREFIXES.WARNING} Failed to generate download links: ${linkError instanceof Error ? linkError.message : 'Unknown error'}`);
+      console.warn(`${LOG_PREFIXES.WARNING} Failed to generate viewer link: ${linkError instanceof Error ? linkError.message : 'Unknown error'}`);
       message += `\n🔍 Check the \`${FILESYSTEM.RECORDINGS_DIR}/${folderName}\` folder for all files.`;
     }
     

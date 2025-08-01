@@ -18,11 +18,17 @@ COPY package*.json ./
 # Install all dependencies (including dev dependencies for building)
 RUN npm ci
 
+# Copy frontend files
+COPY frontend/ ./frontend/
+
+# Install frontend dependencies
+RUN cd frontend && npm ci
+
 # Copy source code
 COPY src/ ./src/
 COPY tsconfig.json ./
 
-# Build TypeScript
+# Build frontend first, then TypeScript backend
 RUN npm run build
 
 # Remove dev dependencies to reduce image size
