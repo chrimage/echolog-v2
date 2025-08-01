@@ -42,6 +42,39 @@ export default function MarkdownViewer({ viewerToken, type, title }: MarkdownVie
     }
   }
 
+  const handleCopyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(content)
+      // Simple visual feedback - could be improved with a toast notification
+      const button = document.getElementById(`copy-${type}`)
+      if (button) {
+        const originalText = button.textContent
+        button.textContent = '✅ Copied!'
+        setTimeout(() => {
+          button.textContent = originalText
+        }, 2000)
+      }
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err)
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea')
+      textArea.value = content
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+      
+      const button = document.getElementById(`copy-${type}`)
+      if (button) {
+        const originalText = button.textContent
+        button.textContent = '✅ Copied!'
+        setTimeout(() => {
+          button.textContent = originalText
+        }, 2000)
+      }
+    }
+  }
+
   if (loading) {
     return (
       <div className="loading">
@@ -70,20 +103,29 @@ export default function MarkdownViewer({ viewerToken, type, title }: MarkdownVie
 
   return (
     <div>
-      <div style={{ 
+      <div className="markdown-viewer-header" style={{ 
         display: 'flex', 
         justifyContent: 'space-between', 
         alignItems: 'center', 
         marginBottom: '20px',
         paddingBottom: '15px',
-        borderBottom: '1px solid #e9ecef'
+        borderBottom: '1px solid var(--border-color)'
       }}>
         <h3>{title}</h3>
-        {downloadUrl && (
-          <button onClick={handleDownload} className="download-button">
-            ⬇️ Download {type === 'transcript' ? 'Transcript' : 'Summary'}
+        <div className="markdown-viewer-buttons" style={{ display: 'flex', gap: '10px' }}>
+          <button 
+            id={`copy-${type}`}
+            onClick={handleCopyToClipboard} 
+            className="download-button copy-button"
+          >
+            📋 Copy to Clipboard
           </button>
-        )}
+          {downloadUrl && (
+            <button onClick={handleDownload} className="download-button">
+              ⬇️ Download {type === 'transcript' ? 'Transcript' : 'Summary'}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="markdown-content">

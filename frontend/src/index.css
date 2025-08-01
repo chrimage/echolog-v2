@@ -247,6 +247,16 @@ audio {
   border-radius: 3px;
 }
 
+/* Copy button styling */
+.copy-button {
+  background: var(--text-secondary) !important;
+  opacity: 0.8;
+}
+
+.copy-button:hover {
+  opacity: 1;
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
   .container {
@@ -268,5 +278,18 @@ audio {
   
   .session-info {
     grid-template-columns: 1fr;
+  }
+
+  /* Stack buttons vertically on mobile */
+  .markdown-viewer-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+  
+  .markdown-viewer-buttons {
+    flex-direction: column;
+    width: 100%;
+    gap: 8px;
   }
 }
