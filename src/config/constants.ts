@@ -29,7 +29,7 @@ export const TRANSCRIPTION = {
   /** Maximum file size for Groq API in MB (free tier limit) */
   MAX_FILE_SIZE_MB: 25,
   /** Groq Whisper model to use */
-  WHISPER_MODEL: 'whisper-large-v3',
+  WHISPER_MODEL: process.env.GROQ_WHISPER_MODEL || 'whisper-large-v3',
   /** Temperature setting for transcription (0 = more deterministic) */
   TEMPERATURE: 0,
   /** Maximum no-speech probability to include segments */
@@ -41,7 +41,7 @@ export const TRANSCRIPTION = {
 // Summarization Constants
 export const SUMMARIZATION = {
   /** Groq model for summarization */
-  MODEL: 'llama-3.3-70b-versatile',
+  MODEL: process.env.GROQ_SUMMARY_MODEL || 'llama-3.3-70b-versatile',
   /** Temperature for summary generation (0 = more deterministic) */
   TEMPERATURE: 0.1,
   /** System prompt for STT-aware summarization */
